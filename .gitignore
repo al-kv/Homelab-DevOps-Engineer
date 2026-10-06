@@ -1,0 +1,11 @@
+*.retry
+.env
+*.key
+*.pem
+id_*
+known_hosts
+.terraform/
+*.tfstate*
+kubeconfig
+*.log
+__pycache__/
