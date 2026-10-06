@@ -545,7 +545,15 @@ git add .
 git commit -m "..."
 git push
 ```
+## Git — удалённый репозиторий
 
+- URL: git@github.com:al-kv/Homelab-DevOps-Engineer.git
+- Ветка: main
+- Первый push: 2026-10-06
+
+### Если push rejected (non-fast-forward)
+git pull --rebase origin main
+git push -u origin main
 ---
 
 ## Что осталось
