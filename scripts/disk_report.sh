@@ -1,13 +1,11 @@
 #!/bin/bash
 # disk_report.sh — собрать df и du /var/log со всех VM
-# Запуск: ./disk_report.sh
-# Результат: дописывает в /var/log/disk_report.log
-
-set -euo pipefail
+# Результат: ~/logs/disk_report.log (без sudo, без /var/log)
+set -uo pipefail
 
 LOG_FILE="/var/log/disk_report.log"
+mkdir -p "$HOME/logs"
 
-# список VM: "user@host:label"
 HOSTS=(
     "admin@192.168.1.82:vm-web"
     "admin@192.168.1.94:vm-dns"
@@ -15,17 +13,16 @@ HOSTS=(
     "student@192.168.1.62:vm-legacy"
 )
 
-# шапка отчёта
 {
     echo ""
     echo "================================================================"
     echo "Отчёт: $(date '+%Y-%m-%d %H:%M:%S')"
     echo "================================================================"
-} | sudo tee -a "$LOG_FILE" > /dev/null
+} >> "$LOG_FILE"
 
 for entry in "${HOSTS[@]}"; do
-    host="${entry%%:*}"        # всё до двоеточия
-    label="${entry##*:}"       # всё после двоеточия
+    host="${entry%%:*}"
+    label="${entry##*:}"
 
     {
         echo ""
@@ -35,7 +32,7 @@ for entry in "${HOSTS[@]}"; do
         echo ""
         echo "du -sh /var/log:"
         ssh -o BatchMode=yes -o ConnectTimeout=5 "$host" "sudo du -sh /var/log" 2>&1 || echo "  [недоступен]"
-    } | sudo tee -a "$LOG_FILE" > /dev/null
+    } >> "$LOG_FILE"
 done
 
 echo "[OK] Отчёт добавлен в $LOG_FILE"

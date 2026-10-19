@@ -1,0 +1,10 @@
+# Применить на vm-legacy (Rocky Linux 9.8):
+# sudo firewall-cmd --permanent --add-service=ssh
+# sudo firewall-cmd --permanent --add-service=http
+# sudo firewall-cmd --permanent --add-service=https
+# sudo firewall-cmd --reload
+#
+# Проверить: sudo firewall-cmd --list-all
+ssh
+http
+https

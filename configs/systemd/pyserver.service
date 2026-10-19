@@ -1,0 +1,17 @@
+# /etc/systemd/system/pyserver.service на vm-web
+# sudo cp pyserver.service /etc/systemd/system/
+# sudo systemctl daemon-reload && sudo systemctl enable --now pyserver
+[Unit]
+Description=Python http.server on port 9000 (test service)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/site2
+ExecStart=/usr/bin/python3 -m http.server 9000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

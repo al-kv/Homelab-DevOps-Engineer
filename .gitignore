@@ -1,3 +1,4 @@
+# существующее
 *.retry
 .env
 *.key
@@ -9,3 +10,13 @@ known_hosts
 kubeconfig
 *.log
 __pycache__/
+
+# добавить
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+logs/
+backups/
+*.tar.gz
