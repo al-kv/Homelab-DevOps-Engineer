@@ -4,7 +4,7 @@
 
 Есть вторая часть этого проекта, где та же инфраструктура автоматизирована через Ansible: https://github.com/al-kv/ansible-homelab-project
 
-![Схема сети](network-scheme.png)
+![Схема сети](network-scheme.png.png)
 
 ## Что настроено
 
