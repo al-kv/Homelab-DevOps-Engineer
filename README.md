@@ -29,6 +29,21 @@
 
 ---
 
+## Схема сети
+
+    [ Интернет / Шлюз 192.168.1.1 ]
+                 |
+    ============================================
+    |           |            |         |       |
+[vm-ctrl]  [vm-web]     [vm-dns]  [vm-vpn]  [vm-legacy]
+ .131       .82          .94       .77       .62
+ (Admin)    (Nginx)      (DNS)     (VPN)     (Rocky)
+    |           |            |         |       |
+    +-----------+------------+---------+-------+
+                         |
+                   [ Windows Клиент ]
+                   (через WireGuard 10.10.0.2)
+
 ## Что построено
 
 ### 5 виртуалок на VirtualBox (Bridged Adapter)
@@ -154,11 +169,11 @@ SSH-ключи между vm-ctrl и остальными. NOPASSWD sudo на к
 
 | VM | Юзер | Правило |
 |---|---|---|
-| vm-ctrl | admin | admin ALL=(ALL) NOPASSWD: ALL |
-| vm-web | admin | admin ALL=(ALL) NOPASSWD: ALL |
-| vm-dns | admin | admin ALL=(ALL) NOPASSWD: ALL |
-| vm-vpn | admin1 | admin1 ALL=(ALL) NOPASSWD: ALL |
-| vm-legacy | student | student ALL=(ALL) NOPASSWD: ALL |
+| vm-ctrl | admin | admin ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/tar, /usr/bin/tee |
+| vm-web | admin | admin ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/tar, /usr/bin/tee |
+| vm-dns | admin | admin ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/tar, /usr/bin/tee |
+| vm-vpn | admin1 | admin1 ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/wg |
+| vm-legacy | student | student ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/sbin/lynis |
 
 В проде NOPASSWD: ALL это плохо. Правильно ограничивать конкретными командами:
 
@@ -357,7 +372,7 @@ IP-адреса, имена пользователей, публичные кл�
 **Что делать:** логи в домашнюю папку:
     */15 * * * * /home/admin/scripts/check_services.sh >> /home/admin/logs/check_services.log 2>&1
 
-disk_report.sh пишет в /var/log/disk_report.log (по ТЗ). Файл создан с владельцем admin, поэтому пишется без sudo.
+disk_report.sh пишет в /var/log/homelab/disk_report.log (по ТЗ). Файл создан с владельцем admin, поэтому пишется без sudo.
 
 ### 16. lynis: command -v пусто через sudo
 
@@ -406,13 +421,13 @@ sh -c '...' запускает новый shell под sudo, и command рабо
 
 ### backup_nginx.sh
 
-Забирает /etc/nginx с vm-web по SSH, пакует, проверяет целостность (stat + tar -tzf), удаляет битые и пустые. Раз в день в 03:00. Хранит в /backup/nginx/, 7 последних.
+Забирает /etc/nginx с vm-web по SSH, пакует, проверяет целостность (stat + tar -tzf), удаляет битые и пустые. Раз в день в 03:00. Хранит в /var/backups/nginx/, 7 последних.
 
 Предварительный шаг один раз: ssh admin@192.168.1.82 "sudo setfacl -R -m u:admin:rx /etc/nginx", чтобы admin мог читать конфиг без sudo.
 
 ### disk_report.sh
 
-Собирает df -h и du -sh /var/log со всех VM. Каждый час. Пишет в /var/log/disk_report.log (файл создан с владельцем admin, поэтому без sudo).
+Собирает df -h и du -sh /var/log со всех VM. Каждый час. Пишет в /var/log/homelab/disk_report.log (файл создан с владельцем admin, поэтому без sudo).
 
 ### security_audit.sh
 
@@ -433,7 +448,7 @@ sh -c '...' запускает новый shell под sudo, и command рабо
 
 Задачи разнесены по времени, чтобы не стартовали одновременно. disk_report в :00, backup в 03:00, audit в 04:00 воскресенья. check_services каждые 15 минут.
 
-disk_report.sh использует > (перезапись) для .cron.log, чтобы не путать вывод cron с самим отчётом. Отчёт пишется в /var/log/disk_report.log.
+disk_report.sh использует > (перезапись) для .cron.log, чтобы не путать вывод cron с самим отчётом. Отчёт пишется в /var/log/homelab/disk_report.log.
 
 Проверка:
     crontab -l
@@ -532,8 +547,8 @@ getenforce показал Enforcing. Nginx запустился, но стран
 
 - Юзеры admin/admin1/student вместо ansible. Функционально одно и то же: непривилегированный пользователь с NOPASSWD sudo. AllowUsers прописан в configs/ssh/99-hardening.conf под каждого.
 - IP-адреса реальные из моей лабы (192.168.1.131, .82, .94, .77, .62), а не 192.168.1.101-105 из ТЗ. В ТЗ указано «пример».
-- backup_nginx.sh пишет в /backup/nginx/ (по ТЗ). Папка создана с владельцем admin, чтобы cron-задача писала без sudo.
-- disk_report.sh пишет в /var/log/disk_report.log (по ТЗ). Файл создан с владельцем admin по той же причине.
+- backup_nginx.sh пишет в /var/backups/nginx/ (по ТЗ). Папка создана с владельцем admin, чтобы cron-задача писала без sudo.
+- disk_report.sh пишет в /var/log/homelab/disk_report.log (по ТЗ). Файл создан с владельцем admin по той же причине.
 - security_audit.sh различает rc=1/2 (lynis нашёл проблемы, это норма) от rc>2 или 255 (реальная ошибка SSH/sudo). Оригинальный скрипт падал целиком при первом же замечании lynis.
 
 ---
@@ -561,7 +576,7 @@ NAT настроен корректно. iptables -t nat -L POSTROUTING -n по�
 
 Проект полностью рабочий, но идеальным он не бывает. Вот что можно сделать дальше:
 
-- **Ротация логов:** настроить logrotate для /var/log/disk_report.log и ~/logs/*.log.
+- **Ротация логов:** настроить logrotate для /var/log/homelab/disk_report.log и ~/logs/*.log.
 - **Линтеры:** прогнать shellcheck по всем скриптам и добавить вывод в репозиторий.
 - **Инфраструктура как код:** этот же проект уже автоматизирован через Ansible (ссылка на репозиторий в самом начале).
 

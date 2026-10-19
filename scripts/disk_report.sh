@@ -3,7 +3,7 @@
 # Результат: ~/logs/disk_report.log (без sudo, без /var/log)
 set -uo pipefail
 
-LOG_FILE="/var/log/disk_report.log"
+LOG_FILE="/var/log/homelab/disk_report.log"
 mkdir -p "$HOME/logs"
 
 HOSTS=(

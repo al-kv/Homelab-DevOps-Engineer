@@ -3,7 +3,7 @@
 # Предварительно (один раз): ssh admin@192.168.1.82 "sudo setfacl -R -m u:admin:rx /etc/nginx"
 set -euo pipefail
 
-BACKUP_DIR="/backup/nginx"
+BACKUP_DIR="/var/backups/nginx"
 REMOTE_HOST="admin@192.168.1.82"
 REMOTE_SRC="/etc/nginx"
 DATE=$(date +%Y-%m-%d_%H-%M-%S)
