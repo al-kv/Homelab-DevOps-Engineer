@@ -1,4 +1,4 @@
-# Homelab DevOps Engineer — Блок 1
+# Homelab DevOps Engineer - Блок 1
 
 **Дата начала:** 2026-09-30
 **Дата завершения:** 2026-10-06
@@ -8,7 +8,7 @@
 
 Домашняя лаборатория из 5 виртуалок. Собрана руками, без Ansible, чтобы понять, как всё устроено под капотом. Сеть, DNS, VPN, веб-сервер, автоматизация через bash и cron.
 
-**Связанный проект:** [ansible-homelab-project](https://github.com/al-kv/ansible-homelab-project) — та же инфраструктура, но развёрнутая через Ansible. Здесь я собирал всё вручную, там автоматизировал.
+**Связанный проект:** [ansible-homelab-project](https://github.com/al-kv/ansible-homelab-project) - та же инфраструктура, но развёрнутая через Ansible. Здесь я собирал всё вручную, там автоматизировал.
 
 ---
 
@@ -83,7 +83,7 @@ VirtualBox, Bridged Adapter. Ubuntu 24.04, Debian 13, Rocky 9.8, везде Mini
 2. DNS на Pi-hole.
 3. SSH hardening через drop-in 99-hardening.conf.
 4. Firewall.
-5. fail2ban, auditd, unattended-upgrades. На Rocky вместо unattended — dnf-automatic.
+5. fail2ban, auditd, unattended-upgrades. На Rocky вместо unattended - dnf-automatic.
 6. /etc/hosts: добавить 127.0.1.1 <hostname> и имена всех 5 VM.
 
 ### Дни 3-4. Сервисы
@@ -106,8 +106,8 @@ SSH-ключи между vm-ctrl и остальными. NOPASSWD sudo на к
 ### SSH-ключи
 
 Что это:
-- **Приватный ключ** (~/.ssh/id_ed25519) — то, чем ты доказываешь, что ты это ты.
-- **Публичный ключ** (~/.ssh/id_ed25519.pub) — «отпечаток» приватного. Его можно раздавать всем, кому хочешь разрешить вход.
+- **Приватный ключ** (~/.ssh/id_ed25519) - то, чем ты доказываешь, что ты это ты.
+- **Публичный ключ** (~/.ssh/id_ed25519.pub) - «отпечаток» приватного. Его можно раздавать всем, кому хочешь разрешить вход.
 
 Как работает вход по ключу:
 1. Сервер держит список разрешённых публичных ключей в ~/.ssh/authorized_keys.
@@ -127,9 +127,9 @@ SSH-ключи между vm-ctrl и остальными. NOPASSWD sudo на к
 **Правило:** приватный ключ никогда никуда не копируется. Публичный можно показывать всем.
 
 **Права (это критично, SSH молча откажется работать при неверных правах):**
-- ~/.ssh — 700, владелец сам пользователь.
-- ~/.ssh/authorized_keys — 600, владелец сам пользователь.
-- ~/.ssh/id_ed25519 — 600, владелец сам пользователь.
+- ~/.ssh - 700, владелец сам пользователь.
+- ~/.ssh/authorized_keys - 600, владелец сам пользователь.
+- ~/.ssh/id_ed25519 - 600, владелец сам пользователь.
 
 **Как я это использовал:** одна пара ключей на vm-ctrl. Публичный добавил в authorized_keys на 4 VM. Теперь vm-ctrl ходит на остальные без пароля.
 
@@ -142,8 +142,8 @@ SSH-ключи между vm-ctrl и остальными. NOPASSWD sudo на к
 - В конфиге клиента: [Interface] PrivateKey = client_private + [Peer] PublicKey = server_public.
 
 Права:
-- /etc/wireguard/ — 700, владелец root.
-- /etc/wireguard/wg0.conf — 600, владелец root.
+- /etc/wireguard/ - 700, владелец root.
+- /etc/wireguard/wg0.conf - 600, владелец root.
 
 Чего не делать:
 - Не показывать cat целиком /etc/wireguard/, там приватные ключи.
