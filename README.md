@@ -1,695 +1,587 @@
-# Homelab DevOps Engineer — Блок 1: Фундамент
+# Homelab DevOps Engineer — Блок 1
 
 **Дата начала:** 2026-09-30
-**Дата завершения Блока 1:** 2026-10-06
+**Дата завершения:** 2026-10-06
 **Автор:** admin@vm-ctrl
-**Цель:** собрать с нуля домашнюю инфраструктуру из 5 виртуалок. Сеть, DNS, VPN, веб-сервер, автоматизация, мониторинг. Всё руками, чтобы понять, как оно работает под капотом.
 
-**Связанный проект:** [ansible-homelab-project](https://github.com/al-kv/ansible-homelab-project). Та же инфраструктура, но развёрнутая через Ansible. Здесь я собирал всё руками, там автоматизировал.
+## О чём это
+
+Домашняя лаборатория из 5 виртуалок. Собрана руками, без Ansible, чтобы понять, как всё устроено под капотом. Сеть, DNS, VPN, веб-сервер, автоматизация через bash и cron.
+
+**Связанный проект:** [ansible-homelab-project](https://github.com/al-kv/ansible-homelab-project) — та же инфраструктура, но развёрнутая через Ansible. Здесь я собирал всё вручную, там автоматизировал.
 
 ---
 
 ## Содержание
 
-1. [Что построено (итог)](#что-построено)
-2. [Хронология: что делали по шагам](#хронология)
-3. [Секреты: что это, зачем, как хранятся](#секреты)
-4. [Полный список проблем и решений](#проблемы)
+1. [Что построено](#что-построено)
+2. [Хронология](#хронология)
+3. [Секреты и как с ними обращаться](#секреты)
+4. [18 граблей и как я их обошёл](#проблемы)
 5. [Скрипты автоматизации](#скрипты)
-6. [Cron — расписание](#cron)
-7. [Git — что и куда коммитим](#git)
-8. [SELinux на vm-legacy](#selinux)
+6. [Cron](#cron)
+7. [Git](#git)
+8. [SELinux на Rocky](#selinux)
 9. [Отступления от ТЗ](#отступления)
 10. [Доказательства работы VPN](#vpn-proof)
 11. [Что осталось на будущее](#осталось)
+12. [Как развернуть у себя](#развернуть)
 
 ---
 
 ## Что построено
 
-### 5 виртуальных машин (VirtualBox, Bridged Adapter)
+### 5 виртуалок на VirtualBox (Bridged Adapter)
 
-| # | Имя | ОС | IP | Пользователь | Роль |
+| # | Имя | ОС | IP | Юзер | Роль |
 |---|---|---|---|---|---|
-| 1 | vm-ctrl | Ubuntu 24.04 | 192.168.1.131 | admin | Мозг. Ansible, скрипты, cron |
+| 1 | vm-ctrl | Ubuntu 24.04 | 192.168.1.131 | admin | Контроллер: скрипты, cron, Ansible |
 | 2 | vm-web | Ubuntu 24.04 | 192.168.1.82 | admin | Nginx: 2 сайта + reverse-proxy на Python |
 | 3 | vm-dns | Ubuntu 24.04 | 192.168.1.94 | admin | Pi-hole: DNS + блокировка рекламы |
 | 4 | vm-vpn | Debian 13 | 192.168.1.77 | admin1 | WireGuard VPN сервер |
-| 5 | vm-legacy | Rocky Linux 9.8 | 192.168.1.62 | student | RHEL-мир, SELinux, firewalld |
+| 5 | vm-legacy | Rocky 9.8 | 192.168.1.62 | student | RHEL-мир, SELinux, firewalld |
 
-**Сеть:** одна подсеть `192.168.1.0/24`, шлюз `192.168.1.1`.
+**Сеть:** одна подсеть 192.168.1.0/24, шлюз 192.168.1.1.
 
-**DNS:** все VM ходят за DNS на `192.168.1.94` (Pi-hole).
+**DNS:** все ходят на 192.168.1.94 (Pi-hole).
 
-**Firewall:**
-- Ubuntu/Debian — `ufw`
-- Rocky — `firewalld`
-- Открыто только нужное.
+**Firewall:** на Ubuntu/Debian ufw, на Rocky firewalld. Открыто только нужное.
 
-**SSH:** вход только по ключу ed25519, пароли отключены, root-логин запрещён.
+**SSH:** только по ключу ed25519. Пароли отключены, root-логин запрещён.
 
-**Автоматизация:** 4 bash-скрипта на vm-ctrl, запускаются через cron. Всё в Git.
+**Автоматизация:** 4 bash-скрипта на vm-ctrl, запускаются через cron. Всё лежит в этом репозитории.
 
 ---
 
-## Хронология: что делали по шагам
+## Хронология
 
-### День 1-2. Установка 5 VM
+### Дни 1-2. Установка VM
 
-- VirtualBox, Bridged Adapter.
-- Ubuntu Server 24.04, Debian 13, Rocky 9.8 — Minimal Install.
-- Пользователи: `admin` (Ubuntu/Debian), `admin1` (Debian-vpn), `student` (Rocky).
+VirtualBox, Bridged Adapter. Ubuntu 24.04, Debian 13, Rocky 9.8, везде Minimal Install.
 
-### День 2-3. Базовая настройка каждой VM (руками)
+Юзеры: admin на Ubuntu/Debian, admin1 на vpn, student на Rocky.
 
-Для каждой VM:
-1. **Static IP** (netplan / nmcli).
-2. **DNS → Pi-hole** (`/etc/resolv.conf` или nmcli).
-3. **SSH hardening** (drop-in `99-hardening.conf`).
-4. **Firewall** (ufw / firewalld).
-5. **fail2ban, auditd, unattended-upgrades** (на Rocky — `dnf-automatic`).
-6. **/etc/hosts** — добавить `127.0.1.1 <hostname>` и имена всех 5 VM.
+### Дни 2-3. Базовая настройка вручную
 
-### День 3-4. Сервисы
+Каждая VM:
+1. Статический IP (netplan или nmcli).
+2. DNS на Pi-hole.
+3. SSH hardening через drop-in 99-hardening.conf.
+4. Firewall.
+5. fail2ban, auditd, unattended-upgrades. На Rocky вместо unattended — dnf-automatic.
+6. /etc/hosts: добавить 127.0.1.1 <hostname> и имена всех 5 VM.
 
-- **vm-web:** Nginx с двумя сайтами (`site1.local`, `site2.local`) + reverse-proxy на Python (`python3 -m http.server 9000` через systemd-юнит `pyserver.service`, см. `configs/systemd/`).
-- **vm-dns:** Pi-hole + systemd-resolved отключён + upstream = Cloudflare.
+### Дни 3-4. Сервисы
+
+- **vm-web:** Nginx с двумя сайтами (site1.local, site2.local). Плюс reverse-proxy на Python через systemd-юнит pyserver.service (см. configs/systemd/).
+- **vm-dns:** Pi-hole. systemd-resolved отключён, upstream Cloudflare.
 - **vm-vpn:** WireGuard сервер + NAT + IP forwarding.
-- **vm-legacy:** Nginx + SELinux Enforcing + firewalld (для reverse-proxy нужен `setsebool -P httpd_can_network_connect on`).
+- **vm-legacy:** Nginx + SELinux Enforcing + firewalld. Для reverse-proxy нужен setsebool -P httpd_can_network_connect on.
 
-### День 5-6. Секреты и автоматизация
+### Дни 5-6. Секреты и автоматизация
 
-- **SSH-ключи** между vm-ctrl и остальными VM.
-- **NOPASSWD sudo** на каждой VM (для скриптов).
-- **4 скрипта** на vm-ctrl.
-- **cron** — расписание.
-- **Git** — сохранение всего.
+SSH-ключи между vm-ctrl и остальными. NOPASSWD sudo на каждой VM. 4 скрипта на vm-ctrl. Cron. Всё в Git.
 
 ---
 
-## Секреты: что это, зачем, как хранятся
+## Секреты и как с ними обращаться
 
-**Секрет** это то, что даёт доступ к системе: пароль, ключ, токен. Если он утечёт не к тому человеку, будет плохо. Поэтому важно понимать, что это за секрет, где он лежит и кому доступен.
+Секрет это то, что даёт доступ к системе: пароль, ключ, токен. Если он утечёт не к тому человеку, будет плохо. Поэтому важно понимать, что это за секрет, где он лежит и кому доступен.
 
-### 1. SSH-ключи (приватный + публичный)
+### SSH-ключи
 
-**Что это:**
-- **Приватный ключ** (`~/.ssh/id_ed25519`) — ЭЦП, которой ты доказываешь, что ты — это ты.
-- **Публичный ключ** (`~/.ssh/id_ed25519.pub`) — «отпечаток» приватного. Раздаётся всем, кому хочешь разрешить вход.
+Что это:
+- **Приватный ключ** (~/.ssh/id_ed25519) — то, чем ты доказываешь, что ты это ты.
+- **Публичный ключ** (~/.ssh/id_ed25519.pub) — «отпечаток» приватного. Его можно раздавать всем, кому хочешь разрешить вход.
 
-**Как работает:**
-1. Сервер имеет список разрешённых публичных ключей (`~/.ssh/authorized_keys`).
-2. Клиент подключается, отправляет свой публичный ключ.
-3. Сервер проверяет, есть ли такой в списке.
-4. Если есть — клиент доказывает, что у него есть приватный ключ (через криптографию).
+Как работает вход по ключу:
+1. Сервер держит список разрешённых публичных ключей в ~/.ssh/authorized_keys.
+2. Клиент подключается и отправляет свой публичный ключ.
+3. Сервер смотрит: есть такой в списке или нет.
+4. Если есть, клиент доказывает, что у него есть парный приватный ключ.
 5. Пароль не нужен.
 
-**Что хранится где:**
+Что где лежит:
 
 | Файл | Где | Кому можно |
 |---|---|---|
-| `id_ed25519` (приватный) | только vm-ctrl | никому |
-| `id_ed25519.pub` (публичный) | везде | всем |
-| `authorized_keys` (список публичных) | на каждой VM | содержит публичные ключи |
+| id_ed25519 (приватный) | только vm-ctrl | никому |
+| id_ed25519.pub (публичный) | везде | всем |
+| authorized_keys | на каждой VM | там только публичные ключи |
 
-**Правило:** приватный ключ **никогда** не копируется никуда. Публичный — можно показывать всем.
+**Правило:** приватный ключ никогда никуда не копируется. Публичный можно показывать всем.
 
-**Права на файлы (критично):**
-- `~/.ssh` — `700`, владелец — сам пользователь.
-- `~/.ssh/authorized_keys` — `600`, владелец — сам пользователь.
-- `~/.ssh/id_ed25519` — `600`, владелец — сам пользователь.
+**Права (это критично, SSH молча откажется работать при неверных правах):**
+- ~/.ssh — 700, владелец сам пользователь.
+- ~/.ssh/authorized_keys — 600, владелец сам пользователь.
+- ~/.ssh/id_ed25519 — 600, владелец сам пользователь.
 
-**Как мы это использовали:**
-- Одна пара ключей на vm-ctrl.
-- Публичный ключ добавлен в `authorized_keys` на 4 VM.
-- Теперь vm-ctrl может ходить на остальные без пароля.
+**Как я это использовал:** одна пара ключей на vm-ctrl. Публичный добавил в authorized_keys на 4 VM. Теперь vm-ctrl ходит на остальные без пароля.
 
-### 2. WireGuard-ключи (приватный + публичный)
+### WireGuard-ключи
 
-**Аналогично SSH**, но для VPN.
+Логика та же, что у SSH, но для VPN. Приватный ключ сервера лежит только на vm-vpn. Приватный ключ клиента (Windows) только на Windows. Публичные обменяны между сторонами.
 
-- Приватный ключ **сервера** — только на vm-vpn.
-- Приватный ключ **клиента** (Windows) — только на Windows.
-- Публичные — обменяны между сторонами.
+Правило простое:
+- В конфиге сервера: [Interface] PrivateKey = server_private + [Peer] PublicKey = client_public.
+- В конфиге клиента: [Interface] PrivateKey = client_private + [Peer] PublicKey = server_public.
 
-**Правило:**
-- В конфиге сервера: `[Interface] PrivateKey = server_private` + `[Peer] PublicKey = client_public`.
-- В конфиге клиента: `[Interface] PrivateKey = client_private` + `[Peer] PublicKey = server_public`.
+Права:
+- /etc/wireguard/ — 700, владелец root.
+- /etc/wireguard/wg0.conf — 600, владелец root.
 
-**Права на файлы:**
-- `/etc/wireguard/` — `700`, владелец root.
-- `/etc/wireguard/wg0.conf` — `600`, владелец root.
-
-**Что НЕ делать:**
-- Не показывать `cat` целиком `/etc/wireguard/` — там приватные ключи.
+Чего не делать:
+- Не показывать cat целиком /etc/wireguard/, там приватные ключи.
 - Не публиковать в чат.
 - Не копировать на чужие машины.
 
-**Грабли, которые прошёл:** выложил `cat *` из `/etc/wireguard/` в чат. Приватные ключи засветились. В учебной лабе не критично, в проде — пересоздавать.
+**Мои грабли:** выложил однажды cat * из /etc/wireguard/ в чат. Приватные ключи засветились. В учебной лабе не критично, в проде пришлось бы всё пересоздавать.
 
-В репозитории лежат шаблоны `configs/wireguard/wg0.server.conf` и `wg0.client.conf` **с замазанными `<REDACTED>` ключами** — для документации.
+В репозитории лежат шаблоны configs/wireguard/wg0.server.conf и wg0.client.conf с замазанными REDACTED ключами. Только для документации.
 
-### 3. Sudoers NOPASSWD
+### Sudoers NOPASSWD
 
-**Что это:** файл `/etc/sudoers.d/ansible` содержит правило NOPASSWD для пользователя.
+Файл /etc/sudoers.d/ansible содержит правило NOPASSWD для пользователя. То есть пользователь может выполнять команды от root без пароля.
 
-**Что значит:** пользователь может выполнять команды от root **без пароля**.
+Зачем это нужно: скрипты на vm-ctrl заходят по SSH на другие VM и выполняют sudo. Без NOPASSWD sudo требует пароль через TTY, которого в SSH-сессии нет. Автоматизация просто не работает.
 
-**Зачем:** скрипты на vm-ctrl заходят по SSH на другие VM и выполняют `sudo`. Без NOPASSWD — sudo требует пароль через TTY, которого в SSH-сессии нет.
-
-**Что важно понять:** это тоже «секрет» в смысле **привилегии**. Файл должен быть:
-- Владелец — root.
-- Права — 440.
+Это тоже «секрет» в смысле привилегии. Файл должен быть:
+- Владелец root.
+- Права 440.
 - Не world-writable.
 
-**Правила по VM:**
+Правила по VM:
 
-| VM | Пользователь | Правило |
+| VM | Юзер | Правило |
 |---|---|---|
-| vm-ctrl | admin | `admin ALL=(ALL) NOPASSWD: ALL` |
-| vm-web | admin | `admin ALL=(ALL) NOPASSWD: ALL` |
-| vm-dns | admin | `admin ALL=(ALL) NOPASSWD: ALL` |
-| vm-vpn | admin1 | `admin1 ALL=(ALL) NOPASSWD: ALL` |
-| vm-legacy | student | `student ALL=(ALL) NOPASSWD: ALL` |
+| vm-ctrl | admin | admin ALL=(ALL) NOPASSWD: ALL |
+| vm-web | admin | admin ALL=(ALL) NOPASSWD: ALL |
+| vm-dns | admin | admin ALL=(ALL) NOPASSWD: ALL |
+| vm-vpn | admin1 | admin1 ALL=(ALL) NOPASSWD: ALL |
+| vm-legacy | student | student ALL=(ALL) NOPASSWD: ALL |
 
-**Безопасность:** в проде `NOPASSWD: ALL` — плохо. Правильно — whitelist конкретных команд:
+В проде NOPASSWD: ALL это плохо. Правильно ограничивать конкретными командами:
 
-```
-admin   ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/tar, /usr/bin/tee
-admin1  ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/wg
-student ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/sbin/lynis
-```
+    admin   ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/tar, /usr/bin/tee
+    admin1  ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/wg
+    student ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/sbin/lynis
 
-### 4. Пароль Pi-hole
+### Пароль Pi-hole
 
-- Хранится в `/etc/pihole/pihole.toml` на vm-dns.
-- Доступен только root.
-- Задаётся командой `pihole -a -p`.
-- Используется только для админки (`http://192.168.1.94/admin`).
+Лежит в /etc/pihole/pihole.toml на vm-dns. Доступен только root. Задаётся через pihole -a -p. Нужен только для админки на http://192.168.1.94/admin.
 
-### 5. Пароли пользователей
+### Пароли пользователей
 
-- `admin`, `admin1`, `student` — есть пароли для первого входа.
-- Используются для локального входа (через консоль VirtualBox) и для первого добавления SSH-ключа.
-- После настройки ключей и NOPASSWD — пароли почти не нужны.
+У admin, admin1, student есть пароли для первого входа. Нужны для консоли VirtualBox и для первого добавления SSH-ключа. После настройки ключей и NOPASSWD почти не используются.
 
-### Что НЕ является секретом
+### Что секретом не является
 
-- IP-адреса VM.
-- Имена пользователей.
-- Публичные ключи SSH.
-- Публичные ключи WireGuard.
-- Конфиги (кроме тех, что содержат приватные ключи).
+IP-адреса, имена пользователей, публичные ключи SSH и WireGuard, конфиги без приватных ключей.
 
 ---
 
-## Полный список проблем и решений
+## 18 граблей и как я их обошёл
 
-### Проблема 1. `Image checksum error` при загрузке ISO
+### 1. Image checksum error при загрузке ISO
 
-**Симптом:** при запуске VM с ISO — «ISOLINUX: Image checksum error».
+**Что вижу:** при запуске VM с ISO падает с «ISOLINUX: Image checksum error».
 
-**Причина:** VirtualBox подсовывал свой файл `Unattended-*.viso` вместо реального ISO. Это происходит, когда при создании VM включена галочка «Unattended Installation».
+**Почему:** VirtualBox подсовывал свой Unattended viso вместо реального ISO. Это бывает, когда при создании VM включена галочка «Unattended Installation».
 
-**Решение:**
-- Удалить все `Unattended-*.viso` из настроек носителей.
-- Подключить ISO **вручную** через `Настройки → Носители → Добавить оптический привод`.
-- При создании VM — **галочку «Skip Unattended Installation» ПОСТАВИТЬ**.
+**Что делать:**
+- Удалить все Unattended viso из настроек носителей.
+- Подключить ISO вручную: Настройки, Носители, Добавить оптический привод.
+- При создании VM ставить галочку «Skip Unattended Installation».
 
-**Урок:** на Rocky, Alma и Fedora автоустановка через VirtualBox часто ломается. Проще сразу снять галочку и подключить ISO руками.
+**Вывод:** на Rocky, Alma и Fedora автоустановка через VirtualBox часто ломается. Проще сразу снять галочку и подключить ISO руками.
 
-### Проблема 2. `sudo: unable to resolve host <name>`
+### 2. sudo: unable to resolve host
 
-**Симптом:**
-```
-sudo: unable to resolve host vm-ctrl: Name or service not known
-```
+**Что вижу:**
+    sudo: unable to resolve host vm-ctrl: Name or service not known
 
-**Причина:** `/etc/hosts` пустой или без записи `<hostname>`.
+**Почему:** /etc/hosts пустой или без записи с hostname.
 
-**Решение:** добавить в `/etc/hosts`:
-```
-127.0.0.1       localhost localhost.localdomain
-127.0.1.1       vm-ctrl
-::1             localhost localhost.localdomain
-```
+**Что делать:** добавить в /etc/hosts:
+    127.0.0.1       localhost localhost.localdomain
+    127.0.1.1       vm-ctrl
+    ::1             localhost localhost.localdomain
 
-Строка **`127.0.1.1 <hostname>`** — ключевая.
+Строка 127.0.1.1 <hostname> тут ключевая.
 
-### Проблема 3. netplan: `malformed address`
+### 3. netplan: malformed address
 
-**Симптом:**
-```
-Error in network definition: malformed address '192.168.1./24'
-```
+**Что вижу:**
+    Error in network definition: malformed address '192.168.1./24'
 
-**Причина:** опечатка в IP — пропущен последний октет.
+**Почему:** опечатка в IP, пропущен последний октет.
 
-**Решение:** писать полный IP `192.168.1.131/24`.
+**Что делать:** писать полный IP 192.168.1.131/24.
 
-**Урок:** netplan **очень чувствителен к синтаксису**. YAML не прощает пробелов/опечаток.
+**Вывод:** netplan очень чувствителен к синтаксису. YAML не прощает пробелов и опечаток.
 
-### Проблема 4. `ufw enable` прерывается с `Aborted`
+### 4. ufw enable прерывается с Aborted
 
-**Симптом:**
-```
-Command may disrupt existing ssh connections. Proceed with operation (y|n)? sudo chattr ...
-Aborted
-```
+**Что вижу:**
+    Command may disrupt existing ssh connections. Proceed with operation (y|n)? sudo chattr ...
+    Aborted
 
-**Причина:** в ответ на вопрос «продолжить?» была введена **другая команда**, а не `y`.
+**Почему:** на вопрос «продолжить?» ввёл другую команду вместо y.
 
-**Решение:** ответить строго `y` + Enter.
+**Что делать:** ответить строго y и Enter.
 
-**Урок:** ufw всегда предупреждает, что может оборвать SSH. Но если `22/tcp` уже разрешён — не оборвёт.
+**Вывод:** ufw всегда предупреждает, что может оборвать SSH. Но если 22/tcp уже разрешён, не оборвёт.
 
-### Проблема 5. Pi-hole: `dns.upstreams = []` → все dig возвращают REFUSED
+### 5. Pi-hole: все dig возвращают REFUSED
 
-**Симптом:** после установки Pi-hole команда `dig ya.ru` возвращает `REFUSED`.
+**Что вижу:** после установки Pi-hole dig ya.ru возвращает REFUSED.
 
-**Причина:** при установке Pi-hole не прописал upstream DNS. Значит Pi-hole принимает запросы, но **не знает, куда их передавать** и отвечает отказом.
+**Почему:** при установке не прописал upstream DNS. Pi-hole принимает запросы, но не знает, куда их передавать, и отвечает отказом.
 
-**Решение:**
-```bash
-sudo pihole-FTL --config dns.upstreams '["1.1.1.1", "8.8.8.8"]'
-sudo systemctl restart pihole-FTL
-```
+**Что делать:**
+    sudo pihole-FTL --config dns.upstreams '["1.1.1.1", "8.8.8.8"]'
+    sudo systemctl restart pihole-FTL
 
-**Урок:** после установки Pi-hole всегда проверять:
-```bash
-sudo pihole-FTL --config dns.upstreams
-```
-Если `[]` — задать вручную.
+**Вывод:** после установки Pi-hole всегда проверять sudo pihole-FTL --config dns.upstreams. Если пусто, задать вручную.
 
-### Проблема 6. Debian: `nmcli: unknown connection 'enp0s3'`
+### 6. Debian: nmcli не знает enp0s3
 
-**Симптом:** при попытке настроить static IP на Debian:
-```
-Error: unknown connection 'enp0s3'.
-```
+**Что вижу:**
+    Error: unknown connection 'enp0s3'.
 
-**Причина:** на Debian NetworkManager **не всегда** называет соединение именем интерфейса. У нас оно называлось `"Wired connection 1"` (с пробелами!).
+**Почему:** на Debian NetworkManager не всегда называет соединение именем интерфейса. У меня оно называлось «Wired connection 1», с пробелами.
 
-**Решение:**
-```bash
-sudo nmcli connection show
-```
-Увидеть реальное имя → использовать в кавычках:
-```bash
-sudo nmcli connection modify "Wired connection 1" ...
-```
+**Что делать:**
+    sudo nmcli connection show
 
-**Урок:** **сначала** `nmcli connection show`, потом менять. На каждом дистрибутиве имя может отличаться.
+Посмотреть реальное имя и использовать его в кавычках:
+    sudo nmcli connection modify "Wired connection 1" ...
 
-### Проблема 7. `Server refused our key` при SSH
+**Вывод:** сначала nmcli connection show, потом менять. На каждом дистрибутиве имя может отличаться.
 
-**Симптом:** при подключении через MobaXterm по ключу — `Server refused our key`.
+### 7. Server refused our key при SSH
 
-**Причина:** файл `~/.ssh/authorized_keys` принадлежал **root**, а не пользователю.
+**Что вижу:** при подключении через MobaXterm по ключу Server refused our key.
 
-**Решение:**
-```bash
-sudo chown -R admin1:admin1 ~/.ssh
-chmod 700 ~/.ssh
-chmod 600 ~/.ssh/authorized_keys
-```
+**Почему:** файл ~/.ssh/authorized_keys принадлежал root, а не пользователю. SSH отказывается читать файлы, которые принадлежат не тому.
 
-**Урок:** права на `.ssh` — **критичны**. SSH игнорирует файлы, которые:
-- Принадлежат не тому пользователю.
-- Имеют права шире, чем `700` / `600`.
-- World-writable.
+**Что делать:**
+    sudo chown -R admin1:admin1 ~/.ssh
+    chmod 700 ~/.ssh
+    chmod 600 ~/.ssh/authorized_keys
 
-### Проблема 8. `Host key verification failed`
+**Вывод:** права на .ssh критичны. SSH молча игнорирует файлы, которые принадлежат не тому пользователю, имеют права шире 700/600, или world-writable.
 
-**Симптом:** с vm-ctrl при попытке `ssh admin@192.168.1.82` — `Host key verification failed`.
+### 8. Host key verification failed
 
-**Причина:** `~/.ssh/known_hosts` не содержит хост-ключ целевой VM.
+**Что вижу:** с vm-ctrl при попытке ssh admin@192.168.1.82 падает с Host key verification failed.
 
-**Решение:** первый коннект с:
-```bash
-ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.82 hostname
-```
+**Почему:** ~/.ssh/known_hosts не содержит хост-ключ целевой VM. SSH отказывается идти на «неизвестную» машину.
 
-**Урок:** `accept-new` — идеально для скриптов. Принимает новые хосты, но предупреждает, если ключ изменился.
+**Что делать:** первый коннект с флагом:
+    ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.82 hostname
 
-### Проблема 9. `sudo: a terminal is required to read the password`
+**Вывод:** accept-new идеален для скриптов. Принимает новые хосты, но предупреждает, если ключ изменился.
 
-**Симптом:** скрипт по SSH:
-```
-sudo: a terminal is required to read the password
-sudo: a password is required
-```
+### 9. sudo: a terminal is required
 
-**Причина:** SSH-сессия **не имеет TTY**, а sudo по умолчанию требует пароль **через TTY**.
+**Что вижу:** скрипт по SSH падает:
+    sudo: a terminal is required to read the password
+    sudo: a password is required
 
-**Решение:** NOPASSWD sudo (см. раздел «Секреты»).
+**Почему:** у SSH-сессии нет TTY, а sudo по умолчанию требует пароль через TTY.
 
-**Урок:** без NOPASSWD автоматизация по SSH не работает в принципе. Ansible устроен так же, поэтому в реальных проектах это стандарт.
+**Что делать:** настроить NOPASSWD sudo (см. раздел «Секреты»).
 
-### Проблема 10. WireGuard: handshake did not complete
+**Вывод:** без NOPASSWD автоматизация по SSH не работает в принципе. Ansible устроен так же, поэтому в реальных проектах это стандарт.
 
-**Симптом:** в логе WireGuard на Windows:
-```
-Handshake for peer 1 (192.168.1.77:51820) did not complete after 5 seconds
-```
+### 10. WireGuard: handshake did not complete
 
-**Причина:** `AllowedIPs = 10.10.0.0/24, 192.168.1.0/24` в конфиге клиента. Маршрут `192.168.1.0/24` создаётся через туннель — и запрос на `192.168.1.77:51820` тоже пытается уйти **в этот же туннель**, которого ещё нет. Петля.
+**Что вижу:** в логе на Windows:
+    Handshake for peer 1 (192.168.1.77:51820) did not complete after 5 seconds
 
-**Решение:** убрать `192.168.1.0/24` из клиентского `AllowedIPs`:
-```
-AllowedIPs = 10.10.0.0/24
-```
+**Почему:** в клиентском конфиге было AllowedIPs = 10.10.0.0/24, 192.168.1.0/24. Маршрут 192.168.1.0/24 создаётся через туннель, и запрос на 192.168.1.77:51820 тоже пытается уйти в тот же туннель, которого ещё нет. Петля.
 
-### Проблема 11. WireGuard: SSH к серверу обрывается при рестарте
+**Что делать:** убрать 192.168.1.0/24 из клиентского AllowedIPs:
+    AllowedIPs = 10.10.0.0/24
 
-**Симптом:** `systemctl restart wg-quick@wg0` → SSH-сессия к vm-vpn обрывается.
+### 11. WireGuard: SSH обрывается при рестарте
 
-**Причина:** `AllowedIPs = 10.10.0.2/32, 192.168.1.0/24` в **серверном** конфиге. wg-quick создаёт маршрут `192.168.1.0/24 dev wg0` — весь трафик к домашней сети уходит в туннель, где никого нет.
+**Что вижу:** после systemctl restart wg-quick@wg0 SSH-сессия к vm-vpn отвалилась.
 
-**Решение:** `AllowedIPs = 10.10.0.2/32` (только VPN-адрес клиента).
+**Почему:** в серверном конфиге было AllowedIPs = 10.10.0.2/32, 192.168.1.0/24. wg-quick создаёт маршрут 192.168.1.0/24 dev wg0, и весь трафик к домашней сети уходит в туннель, где никого нет.
 
-**Урок:** **на сервере нельзя указывать локальную сеть в AllowedIPs.** Только VPN-адрес клиента.
+**Что делать:** AllowedIPs = 10.10.0.2/32, только VPN-адрес клиента.
 
-### Проблема 12. WireGuard: MASQUERADE без `-s` ломает сеть
+**Вывод:** на сервере нельзя указывать локальную сеть в AllowedIPs. Только VPN-адрес клиента.
 
-**Симптом:** после старта WireGuard пинг до соседней VM падает.
+### 12. WireGuard: MASQUERADE без -s ломает сеть
 
-**Причина:** правило `iptables -t nat -A POSTROUTING -o enp0s3 -j MASQUERADE` — **без указания источника**. Маскарадится **весь** исходящий трафик через `enp0s3`, включая пинги к соседям.
+**Что вижу:** после старта WireGuard пинг до соседней VM падает.
 
-**Решение:**
-```
-iptables -t nat -A POSTROUTING -s 10.10.0.0/24 -o enp0s3 -j MASQUERADE
-```
+**Почему:** правило iptables -t nat -A POSTROUTING -o enp0s3 -j MASQUERADE без указания источника. Маскарадится весь исходящий трафик через enp0s3, включая пинги к соседям. Обратный маршрут ломается.
 
-`-s 10.10.0.0/24` — маскарад **только для VPN-клиентов**.
+**Что делать:**
+    iptables -t nat -A POSTROUTING -s 10.10.0.0/24 -o enp0s3 -j MASQUERADE
 
-### Проблема 13. iptables -t nat -F POSTROUTING обрывает SSH
+-s 10.10.0.0/24 маскарадит только VPN-клиентов.
 
-**Симптом:** после `sudo iptables -t nat -F POSTROUTING` — SSH отвалился.
+### 13. iptables -F POSTROUTING обрывает SSH
 
-**Причина:** команда сбрасывает **всю** таблицу NAT. Существующие TCP-сессии теряют состояние трекинга.
+**Что вижу:** после sudo iptables -t nat -F POSTROUTING SSH отвалился.
 
-**Решение:** не делать на живой системе без нужды. Если делать — в окне **консоли VirtualBox**, а не через SSH.
+**Почему:** команда сбрасывает всю таблицу NAT. Существующие TCP-сессии теряют состояние трекинга.
 
-**Урок:** **отладка сети — только из консоли VirtualBox.** SSH — это твой единственный канал, потеряешь — восстановить сложно.
+**Что делать:** не делать на живой системе без нужды. Если делать, то из консоли VirtualBox, а не по SSH.
 
-### Проблема 14. `chmod: Operation not permitted` на скриптах
+**Вывод:** отладка сети только из консоли VirtualBox. SSH это твой единственный канал, потеряешь, восстановить сложно.
 
-**Симптом:** `chmod +x check_services.sh` → `Operation not permitted`.
+### 14. chmod: Operation not permitted на скриптах
 
-**Причина:** файлы созданы через `sudo vi`, владелец — `root`.
+**Что вижу:** chmod +x check_services.sh падает с Operation not permitted.
 
-**Решение:**
-```bash
-sudo chown admin:admin ~/scripts/*.sh
-chmod +x ~/scripts/*.sh
-```
+**Почему:** файлы созданы через sudo vi, владелец root.
 
-**Урок:** **не создавай свои файлы через `sudo vi`.** Если очень нужно — потом верни владельца себе.
+**Что делать:**
+    sudo chown admin:admin ~/scripts/*.sh
+    chmod +x ~/scripts/*.sh
 
-### Проблема 15. cron: логи не пишутся в `/var/log/`
+**Вывод:** не создавать свои файлы через sudo vi. Если очень нужно, потом вернуть владельца себе.
 
-**Симптом:** после настройки cron файл `/var/log/check_services.log` не создаётся.
+### 15. cron: логи не пишутся в /var/log
 
-**Причина:** cron запускает задачу от `admin`, а в `/var/log/` писать может только root.
+**Что вижу:** после настройки cron файл /var/log/check_services.log не создаётся.
 
-**Решение:** логи **в домашнюю папку**:
-```
-*/15 * * * * /home/admin/scripts/check_services.sh >> /home/admin/logs/check_services.log 2>&1
-```
+**Почему:** cron запускает задачу от admin, а в /var/log/ писать может только root.
 
-`disk_report.sh` пишет в `/var/log/disk_report.log` (по ТЗ) — файл создан с владельцем `admin`, поэтому пишется без sudo.
+**Что делать:** логи в домашнюю папку:
+    */15 * * * * /home/admin/scripts/check_services.sh >> /home/admin/logs/check_services.log 2>&1
 
-### Проблема 16. lynis: `command -v` пусто через sudo
+disk_report.sh пишет в /var/log/disk_report.log (по ТЗ). Файл создан с владельцем admin, поэтому пишется без sudo.
 
-**Симптом:** `ssh user@host "sudo command -v lynis"` — пусто, хотя lynis установлен.
+### 16. lynis: command -v пусто через sudo
 
-**Причина:** `command` — это **shell builtin** (встроенная команда bash), а `sudo` не умеет вызывать builtins.
+**Что вижу:** ssh user@host "sudo command -v lynis" возвращает пусто, хотя lynis установлен.
 
-**Решение:**
-```bash
-ssh user@host "sudo sh -c 'command -v lynis >/dev/null'"
-```
+**Почему:** command это shell builtin. sudo не умеет вызывать builtins.
 
-### Проблема 17. lynis на Rocky: пустой отчёт
+**Что делать:**
+    ssh user@host "sudo sh -c 'command -v lynis >/dev/null'"
 
-**Симптом:** lynis на Rocky создаёт файл 0 байт.
+sh -c '...' запускает новый shell под sudo, и command работает.
 
-**Причина:** флаг `--quiet` в новых версиях lynis подавляет **весь** вывод.
+### 17. lynis на Rocky: пустой отчёт
 
-**Решение:** заменить `--quick --quiet` на `--quick --no-colors`.
+**Что вижу:** lynis на Rocky создаёт файл 0 байт.
 
-### Проблема 18. lynis: PID-файл остаётся от прерванного запуска
+**Почему:** флаг --quiet в новых версиях lynis подавляет весь вывод, включая нужный.
 
-**Симптом:**
-```
-Warning: PID file exists, probably another Lynis process is running.
-```
+**Что делать:** заменить --quick --quiet на --quick --no-colors.
 
-**Причина:** предыдущий запуск был прерван (Ctrl+C), PID-файл не удалился.
+### 18. lynis: PID-файл остаётся от прерванного запуска
 
-**Решение (уже встроено в `security_audit.sh`):**
-```bash
-ssh user@host "sudo rm -f /var/run/lynis.pid /tmp/lynis.pid"
-```
+**Что вижу:**
+    Warning: PID file exists, probably another Lynis process is running.
+
+**Почему:** предыдущий запуск прервали через Ctrl+C, PID-файл не удалился.
+
+**Что делать:** в security_audit.sh уже встроено:
+    ssh user@host "sudo rm -f /var/run/lynis.pid /tmp/lynis.pid"
 
 ---
 
 ## Скрипты автоматизации
 
-Все скрипты в `/home/admin/scripts/` на vm-ctrl. Запускаются через cron.
+Все лежат в /home/admin/scripts/ на vm-ctrl. Запускаются через cron.
 
-### 1. `check_services.sh`
+### check_services.sh
 
-**Что:** проверяет ключевые сервисы на всех VM. Различает «хост недоступен» и «сервис упал».
-**Когда:** каждые 15 минут.
-**Куда:** `~/logs/check_services.log` + syslog при падении.
+Проверяет ключевые сервисы на всех VM. Различает «хост недоступен» и «сервис упал». Каждые 15 минут. Пишет в ~/logs/check_services.log плюс syslog при падении.
 
-Проверяет:
-- vm-web: `nginx`, `pyserver`
-- vm-dns: `pihole-FTL`
-- vm-vpn: `wg-quick@wg0`
-- vm-legacy: `nginx`
+Что проверяет:
+- vm-web: nginx, pyserver
+- vm-dns: pihole-FTL
+- vm-vpn: wg-quick@wg0
+- vm-legacy: nginx
 
-### 2. `backup_nginx.sh`
+### backup_nginx.sh
 
-**Что:** забирает `/etc/nginx` с vm-web по SSH, пакует в архив, проверяет целостность (`stat` + `tar -tzf`), удаляет битые и пустые.
-**Когда:** раз в день в 03:00.
-**Куда:** `/backup/nginx/`. Хранит 7 последних.
+Забирает /etc/nginx с vm-web по SSH, пакует, проверяет целостность (stat + tar -tzf), удаляет битые и пустые. Раз в день в 03:00. Хранит в /backup/nginx/, 7 последних.
 
-**Предварительный шаг (один раз):** `ssh admin@192.168.1.82 "sudo setfacl -R -m u:admin:rx /etc/nginx"` — чтобы admin мог читать конфиг без sudo.
+Предварительный шаг один раз: ssh admin@192.168.1.82 "sudo setfacl -R -m u:admin:rx /etc/nginx", чтобы admin мог читать конфиг без sudo.
 
-### 3. `disk_report.sh`
+### disk_report.sh
 
-**Что:** собирает `df -h` и `du -sh /var/log` со всех VM.
-**Когда:** каждый час.
-**Куда:** `/var/log/disk_report.log` (файл создан с владельцем `admin`, пишется без sudo).
+Собирает df -h и du -sh /var/log со всех VM. Каждый час. Пишет в /var/log/disk_report.log (файл создан с владельцем admin, поэтому без sudo).
 
-### 4. `security_audit.sh`
+### security_audit.sh
 
-**Что:** запускает `lynis audit system` на всех VM. Правильно отличает rc=1/2 (lynis нашёл проблемы, но это норма) от rc>2 или 255 (реальная ошибка SSH/sudo).
-**Когда:** воскресенье в 04:00.
-**Куда:** `/var/log/lynis/<vm>-YYYY-MM-DD.log`.
+Запускает lynis audit system на всех VM. Правильно отличает rc=1/2 (lynis нашёл проблемы, это норма) от rc>2 или 255 (реальная ошибка SSH/sudo). По воскресеньям в 04:00. Отчёты в /var/log/lynis/<vm>-YYYY-MM-DD.log.
 
 ---
 
 ## Cron
 
-**Формат:**
-```
-минута  час  день_месяца  месяц  день_недели   команда
-```
+Формат: минута, час, день_месяца, месяц, день_недели, команда.
 
-**Наш crontab:**
+Мой crontab:
 
-```cron
-*/15 * * * * /home/admin/scripts/check_services.sh  >> /home/admin/logs/check_services.log 2>&1
-0    * * * * /home/admin/scripts/disk_report.sh     >  /home/admin/logs/disk_report.cron.log 2>&1
-0    3 * * * /home/admin/scripts/backup_nginx.sh    >> /home/admin/logs/backup_nginx.log 2>&1
-0    4 * * 0 /home/admin/scripts/security_audit.sh >> /home/admin/logs/security_audit.log 2>&1
-```
+    */15 * * * * /home/admin/scripts/check_services.sh  >> /home/admin/logs/check_services.log 2>&1
+    0    * * * * /home/admin/scripts/disk_report.sh     >  /home/admin/logs/disk_report.cron.log 2>&1
+    0    3 * * * /home/admin/scripts/backup_nginx.sh    >> /home/admin/logs/backup_nginx.log 2>&1
+    0    4 * * 0 /home/admin/scripts/security_audit.sh >> /home/admin/logs/security_audit.log 2>&1
 
-Скрипты разнесены по времени, чтобы не стартовали одновременно: `disk_report` в `:00`, `backup` в 03:00, `audit` в 04:00 воскресенья. `check_services` — каждые 15 минут.
+Задачи разнесены по времени, чтобы не стартовали одновременно. disk_report в :00, backup в 03:00, audit в 04:00 воскресенья. check_services каждые 15 минут.
 
-`disk_report.sh` использует `>` (перезапись) для `.cron.log` — чтобы не путать вывод cron с самим отчётом, который пишется в `/var/log/disk_report.log`.
+disk_report.sh использует > (перезапись) для .cron.log, чтобы не путать вывод cron с самим отчётом. Отчёт пишется в /var/log/disk_report.log.
 
-**Проверка:**
-```bash
-crontab -l
-sudo systemctl status cron
-cat ~/logs/check_services.log
-```
+Проверка:
+    crontab -l
+    sudo systemctl status cron
+    cat ~/logs/check_services.log
 
 ---
 
 ## Git
 
-**Зачем:**
-- История версий.
-- Резервная копия на GitHub.
-- Портфолио.
+Зачем: история версий, резервная копия на GitHub, портфолио.
 
-**Структура репозитория:**
+Структура:
 
-```
-~/home_lab/
-├── README.md
-├── .gitignore
-├── LICENSE
-├── configs/
-│   ├── ssh/99-hardening.conf
-│   ├── netplan/50-static-vm-ctrl.yaml
-│   ├── ufw/rules-vm-web.txt
-│   ├── firewalld/rules-vm-legacy.txt
-│   ├── wireguard/wg0.server.conf      # ключи = <REDACTED>
-│   ├── wireguard/wg0.client.conf      # ключи = <REDACTED>
-│   └── systemd/pyserver.service
-└── scripts/
-    ├── check_services.sh
-    ├── backup_nginx.sh
-    ├── disk_report.sh
-    └── security_audit.sh
-```
+    ~/home_lab/
+    ├── README.md
+    ├── .gitignore
+    ├── LICENSE
+    ├── configs/
+    │   ├── ssh/99-hardening.conf
+    │   ├── netplan/50-static-vm-ctrl.yaml
+    │   ├── ufw/rules-vm-web.txt
+    │   ├── firewalld/rules-vm-legacy.txt
+    │   ├── wireguard/wg0.server.conf      # ключи = REDACTED
+    │   ├── wireguard/wg0.client.conf      # ключи = REDACTED
+    │   └── systemd/pyserver.service
+    └── scripts/
+        ├── check_services.sh
+        ├── backup_nginx.sh
+        ├── disk_report.sh
+        └── security_audit.sh
 
-**`.gitignore`:**
+.gitignore:
 
-```
-# секреты
-.env
-*.key
-*.pem
-id_*
-known_hosts
-kubeconfig
+    # секреты
+    .env
+    *.key
+    *.pem
+    id_*
+    known_hosts
+    kubeconfig
 
-# terraform
-.terraform/
-*.tfstate*
-*.retry
+    # terraform
+    .terraform/
+    *.tfstate*
+    *.retry
 
-# артефакты и логи
-*.log
-logs/
-backups/
-*.tar.gz
-__pycache__/
+    # артефакты и логи
+    *.log
+    logs/
+    backups/
+    *.tar.gz
+    __pycache__/
 
-# мусор
-.DS_Store
-*.swp
-*~
-.idea/
-.vscode/
-```
+    # мусор
+    .DS_Store
+    *.swp
+    *~
+    .idea/
+    .vscode/
 
-**Команды:**
-```bash
-cd ~/home_lab
-git add .
-git commit -m "..."
-git push
-```
+Команды:
+    cd ~/home_lab
+    git add .
+    git commit -m "..."
+    git push
 
-**Проверка перед коммитом (важно):**
-```bash
-git status
-# убедиться, что в списке НЕТ id_*, *.key, *.pem, *.tar.gz
-```
+Перед коммитом всегда git status и проверить, что нет id_*, *.key, *.pem, *.tar.gz.
 
-**Удалённый репозиторий:**
+Удалённый репозиторий:
 - URL: git@github.com:al-kv/Homelab-DevOps-Engineer.git
 - Ветка: main
 
-**Если push rejected (non-fast-forward):**
-```bash
-git pull --rebase origin main
-git push -u origin main
-```
+Если push rejected (non-fast-forward):
+    git pull --rebase origin main
+    git push -u origin main
 
 ---
 
-<a id="selinux"></a>
-## SELinux на vm-legacy: что чинили и почему
+## SELinux на Rocky: что чинили и почему
 
-`getenforce` → `Enforcing`. Nginx запустился, но статическая страница не отдавалась (`curl http://192.168.1.62/` → 403). Причина: SELinux по умолчанию запрещает процессу `httpd_t` инициировать сетевые соединения. Nginx у нас работает как reverse-proxy (ходит на `127.0.0.1:9000`), поэтому нужно было разрешить:
+getenforce показал Enforcing. Nginx запустился, но страницу не отдавал (curl http://192.168.1.62/ падал с 403). Причина: SELinux по умолчанию запрещает процессу httpd_t инициировать сетевые соединения. У меня Nginx работает как reverse-proxy, ходит на 127.0.0.1:9000. Значит нужно разрешить:
 
-```bash
-sudo setsebool -P httpd_can_network_connect on
-```
+    sudo setsebool -P httpd_can_network_connect on
 
-`-P` — чтобы флаг сохранился после перезагрузки. После этого страница отдалась.
+-P чтобы флаг сохранился после перезагрузки. После этого страница отдалась.
 
 Для нестандартного порта (например, 8080) дополнительно:
+    sudo semanage port -a -t http_port_t -p tcp 8080
 
-```bash
-sudo semanage port -a -t http_port_t -p tcp 8080
-```
-
-Проверка: `sudo semanage port -l | grep http_port_t` — 8080 в списке. `policycoreutils-python-utils` установлен (нужен для `semanage`).
+Проверка: sudo semanage port -l | grep http_port_t, порт 8080 должен быть в списке. policycoreutils-python-utils установлен, он нужен для semanage.
 
 ---
 
-<a id="отступления"></a>
-## Отступления от ТЗ (осознанные)
+## Отступления от ТЗ
 
-- **Пользователь `admin`/`admin1`/`student` вместо `ansible`.** Функционально одно и то же: непривилегированный пользователь с NOPASSWD sudo. `AllowUsers` прописан в `configs/ssh/99-hardening.conf` под каждого пользователя.
-- **IP-адреса** — реальные из моей лабы (`192.168.1.131`, `.82`, `.94`, `.77`, `.62`), а не `192.168.1.101–105` из ТЗ (в ТЗ указано «пример»).
-- **`backup_nginx.sh` → `/backup/nginx/`** (по ТЗ), папка создана с владельцем `admin`, чтобы cron-задача писала без sudo.
-- **`disk_report.sh` → `/var/log/disk_report.log`** (по ТЗ), файл создан с владельцем `admin` по той же причине.
-- **`security_audit.sh`** различает rc=1/2 (lynis нашёл проблемы — это норма) от rc>2 или 255 (реальная ошибка SSH/sudo). Оригинальный скрипт падал целиком при первом же «замечании» lynis.
+- Юзеры admin/admin1/student вместо ansible. Функционально одно и то же: непривилегированный пользователь с NOPASSWD sudo. AllowUsers прописан в configs/ssh/99-hardening.conf под каждого.
+- IP-адреса реальные из моей лабы (192.168.1.131, .82, .94, .77, .62), а не 192.168.1.101-105 из ТЗ. В ТЗ указано «пример».
+- backup_nginx.sh пишет в /backup/nginx/ (по ТЗ). Папка создана с владельцем admin, чтобы cron-задача писала без sudo.
+- disk_report.sh пишет в /var/log/disk_report.log (по ТЗ). Файл создан с владельцем admin по той же причине.
+- security_audit.sh различает rc=1/2 (lynis нашёл проблемы, это норма) от rc>2 или 255 (реальная ошибка SSH/sudo). Оригинальный скрипт падал целиком при первом же замечании lynis.
 
 ---
 
-<a id="vpn-proof"></a>
 ## Доказательства работы VPN
 
 С Windows-клиента WireGuard после подключения:
 
-```
-ping 10.10.0.1     # шлюз wg0 — Windows firewall блокирует ICMP-reply (на функционал не влияет)
-ping 192.168.1.94  # vm-dns — OK
-```
+    ping 10.10.0.1     # шлюз wg0. Windows firewall блокирует ICMP-reply, на функционал не влияет
+    ping 192.168.1.94  # vm-dns. Пингуется
 
-(`192.168.1.94` — реальный IP vm-dns в моей лабе; в ТЗ указан `.103` как пример.)
+(192.168.1.94 это реальный IP vm-dns в моей лабе. В ТЗ указан .103 как пример.)
 
-Результат `sudo wg show` на vm-vpn:
-```
-interface: wg0
-  listening port: 51820
-peer: <CLIENT_PUBLIC_KEY>
-  allowed ips: 10.10.0.2/32
-```
+sudo wg show на vm-vpn:
+    interface: wg0
+      listening port: 51820
+    peer: CLIENT_PUBLIC_KEY
+      allowed ips: 10.10.0.2/32
 
-NAT настроен корректно: `iptables -t nat -L POSTROUTING -n` → `MASQUERADE all -- 10.10.0.0/24 0.0.0.0/0`.
+NAT настроен корректно. iptables -t nat -L POSTROUTING -n показывает MASQUERADE all -- 10.10.0.0/24 0.0.0.0/0.
 
 ---
 
-<a id="осталось"></a>
 ## Что осталось на будущее
 
-- [x] Снапшоты всех 5 VM в VirtualBox (перед Блоком 2).
-- [x] Скрипты приведены к путям ТЗ (`/backup/nginx`, `/var/log/disk_report.log`).
-- [x] `/etc/hosts` с именами всех 5 VM на vm-ctrl.
-- [ ] Настроить logrotate для `/var/log/disk_report.log` и `~/logs/*.log` (ротация раз в неделю, 4 архива).
-- [ ] Прогнать `shellcheck scripts/*.sh` и зафиксировать вывод в репо.
-- [ ] Блок 2 (Ansible) — реализован отдельным репозиторием `ansible-homelab-project`.
+- [x] Снапшоты всех 5 VM в VirtualBox (перед вторым этапом).
+- [x] Скрипты приведены к путям ТЗ (/backup/nginx, /var/log/disk_report.log).
+- [x] /etc/hosts с именами всех 5 VM на vm-ctrl.
+- [ ] Настроить logrotate для /var/log/disk_report.log и ~/logs/*.log (ротация раз в неделю, 4 архива).
+- [ ] Прогнать shellcheck по всем скриптам и приложить вывод в репо.
+- [ ] Второй этап (Ansible) реализован отдельным репозиторием ansible-homelab-project.
 
 ---
 
-## Как развернуть у себя (кратко)
+## Как развернуть у себя
 
 Это учебный проект для портфолио, а не готовый инсталлятор. Чтобы повторить у себя, сделай так:
 
-1. Поднять 5 VM (Ubuntu 24.04, Ubuntu 24.04, Ubuntu 24.04, Debian 13, Rocky 9.8),
-   Bridged Adapter, статические IP в одной подсети.
-2. Заменить IP-адреса в `scripts/*.sh` и `configs/*` на свои.
-3. Заменить имена пользователей (`admin`, `admin1`, `student`) на свои
-   в скриптах и в `configs/ssh/99-hardening.conf`.
-4. Настроить SSH-ключи: с vm-ctrl сгенерировать `ssh-keygen -t ed25519`,
-   публичный ключ положить в `authorized_keys` на 4 остальных VM.
-5. Установить пакеты по списку из ТЗ Блока 1 (см. выше).
-6. Скопировать `configs/*` на соответствующие VM, применить (netplan apply, ufw enable и т.д.).
-7. Заполнить свои значения в `configs/wireguard/*.conf` (ключи WireGuard).
-8. `crontab -e` на vm-ctrl — вставить 4 строки из раздела «Cron».
-9. Проверить: `~/home_lab/scripts/check_services.sh` → все [OK].
+1. Поднять 5 VM (Ubuntu 24.04, Ubuntu 24.04, Ubuntu 24.04, Debian 13, Rocky 9.8). Bridged Adapter, статические IP в одной подсети.
+2. Заменить IP-адреса в scripts/*.sh и configs/* на свои.
+3. Заменить имена пользователей (admin, admin1, student) на свои в скриптах и в configs/ssh/99-hardening.conf.
+4. Настроить SSH-ключи. С vm-ctrl сгенерировать ssh-keygen -t ed25519, публичный ключ положить в authorized_keys на 4 остальных VM.
+5. Установить пакеты по списку из ТЗ Блока 1.
+6. Скопировать configs/* на соответствующие VM, применить (netplan apply, ufw enable и так далее).
+7. Заполнить свои значения в configs/wireguard/*.conf (ключи WireGuard).
+8. crontab -e на vm-ctrl, вставить 4 строки из раздела «Cron».
+9. Проверить: ~/home_lab/scripts/check_services.sh должен вывести все [OK].
+
+---
+
 **Конец README.**
